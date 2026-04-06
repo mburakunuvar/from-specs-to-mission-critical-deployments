@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Azure AI Gateway – Backend Pool Load Balancing</title>
+  <style>
+    /* ─────────────────────────────────────────────
+       Base / Reset
+    ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f0f4f8;
+      color: #1b1b1b;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 40px;
+    }
+
+    /* ─────────────────────────────────────────────
+       Header
+    ───────────────────────────────────────────── */
+    .app-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .app-header h1 {
+      font-size: 1.45rem;
+      font-weight: 600;
+      color: #0078d4;
+      letter-spacing: -0.3px;
+    }
+    .app-header p {
+      margin-top: 4px;
+      font-size: 0.875rem;
+      color: #666;
+    }
+
+    /* ─────────────────────────────────────────────
+       Diagram container
+    ───────────────────────────────────────────── */
+    .diagram-wrapper {
+      background: #ffffff;
+      border: 1px solid #d2d2d2;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      overflow: hidden;
+      width: 100%;
+      max-width: 1000px;
+    }
+
+    #diagram {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    /* ─────────────────────────────────────────────
+       Control bar
+    ───────────────────────────────────────────── */
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      border: none;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+      outline: none;
+      position: relative;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:focus-visible { box-shadow: 0 0 0 3px rgba(0,120,212,0.4); }
+
+    .btn-primary {
+      background: #0078d4;
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: #106ebe; }
+
+    .btn-stop {
+      background: #605e5c;
+      color: #fff;
+    }
+    .btn-stop:hover:not(:disabled) { background: #484644; }
+
+    .btn-danger {
+      background: #e81123;
+      color: #fff;
+    }
+    .btn-danger:hover:not(:disabled) { background: #c50f1f; }
+
+    .btn-neutral {
+      background: #edebe9;
+      color: #1b1b1b;
+      border: 1px solid #bdbdbd;
+    }
+    .btn-neutral:hover:not(:disabled) { background: #d2d0ce; }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* ─────────────────────────────────────────────
+       Status legend
+    ───────────────────────────────────────────── */
+    .legend {
+      margin-top: 16px;
+      display: flex;
+      gap: 20px;
+      font-size: 0.78rem;
+      color: #555;
+      align-items: center;
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+
+    /* ─────────────────────────────────────────────
+       SVG element classes (applied via JS)
+    ───────────────────────────────────────────── */
+
+    /* Floating label animation */
+    @keyframes floatUp {
+      0%   { opacity: 0; transform: translateY(0); }
+      15%  { opacity: 1; }
+      70%  { opacity: 1; transform: translateY(-18px); }
+      100% { opacity: 0; transform: translateY(-28px); }
+    }
+    .floating-label {
+      animation: floatUp 1.4s ease-out forwards;
+      pointer-events: none;
+    }
+
+    /* Gateway pulse ring */
+    @keyframes gatewayPulse {
+      0%   { r: 52; opacity: 0.7; }
+      100% { r: 72; opacity: 0; }
+    }
+    .gateway-pulse {
+      animation: gatewayPulse 0.8s ease-out forwards;
+      pointer-events: none;
+    }
+
+    /* Packet glow */
+    @keyframes packetGlow {
+      0%, 100% { filter: drop-shadow(0 0 3px currentColor); }
+      50%       { filter: drop-shadow(0 0 8px currentColor); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════
+       Header
+  ══════════════════════════════════════════ -->
+  <header class="app-header">
+    <h1>Azure AI Gateway · Backend Pool Load Balancing</h1>
+    <p>Animated architecture diagram — simulates round-robin routing and failover</p>
+  </header>
+
+  <!-- ══════════════════════════════════════════
+       Diagram
+  ══════════════════════════════════════════ -->
+  <div class="diagram-wrapper">
+    <svg id="diagram" viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg"
+         aria-label="Azure AI Gateway load-balancing architecture diagram">
+      <defs>
+        <!-- Arrow marker for connection lines -->
+        <marker id="arrow" markerWidth="8" markerHeight="8"
+                refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L8,3 z" fill="#0078d4" />
+        </marker>
+        <marker id="arrow-failed" markerWidth="8" markerHeight="8"
+                refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L8,3 z" fill="#c8c6c4" />
+        </marker>
+        <marker id="arrow-failover" markerWidth="8" markerHeight="8"
+                refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L0,6 L8,3 z" fill="#ffb900" />
+        </marker>
+
+        <!-- Drop shadow filter for nodes -->
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#00000022" />
+        </filter>
+
+        <!-- Glow filter for active packets -->
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      <!-- Diagram content is drawn by JavaScript below -->
+    </svg>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       Controls
+  ══════════════════════════════════════════ -->
+  <div class="controls">
+    <button id="btn-start"   class="btn btn-primary">▶ Start Flow</button>
+    <button id="btn-stop"    class="btn btn-stop"    style="display:none">⏹ Stop Flow</button>
+    <button id="btn-failure" class="btn btn-danger"  disabled>⚡ Simulate Failure</button>
+    <button id="btn-reset"   class="btn btn-neutral">↺ Reset</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       Legend
+  ══════════════════════════════════════════ -->
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#107c10"></span>Healthy backend</span>
+    <span><span class="legend-dot" style="background:#e81123"></span>Failed backend</span>
+    <span><span class="legend-dot" style="background:#0078d4"></span>Request packet</span>
+    <span><span class="legend-dot" style="background:#ffb900"></span>Failover reroute</span>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       Script
+  ══════════════════════════════════════════ -->
+  <script>
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 1 – SVG_CONFIG
+     All static coordinate and style constants in one place.
+     Change values here to adjust layout without hunting through code.
+  ════════════════════════════════════════════════════════════ */
+  const SVG_CONFIG = {
+    // SVG element reference
+    svgId: 'diagram',
+
+    // ── Client node (left)
+    client: {
+      cx: 110, cy: 260, r: 46,
+      fill: '#deecf9', stroke: '#0078d4', strokeWidth: 2.5,
+      labelY: 322, subLabelY: 338,
+    },
+
+    // ── APIM Gateway node (center)
+    gateway: {
+      x: 380, y: 210, w: 160, h: 100, rx: 10,
+      cx: 460, cy: 260,          // computed center for animations
+      fill: '#deecf9', stroke: '#0078d4', strokeWidth: 2.5,
+      labelY: 194, subLabelY: 298,
+    },
+
+    // ── Backend pool container (right)
+    pool: {
+      x: 680, y: 108, w: 250, h: 388, rx: 10,
+      stroke: '#2f4f86', fill: '#c7d6ee',
+      labelX: 805, labelY: 98,
+    },
+
+    // ── Individual backend nodes (4 total)
+    backends: [
+      { id: 0, cx: 805, cy: 190, x: 750, y: 163, w: 110, h: 54, rx: 8,
+        label: 'Endpoint 1', subLabel: '',
+        labelY: 187, subLabelY: 201, statusDotX: 855, statusDotY: 168 },
+      { id: 1, cx: 805, cy: 270, x: 750, y: 243, w: 110, h: 54, rx: 8,
+        label: 'Endpoint 2', subLabel: '',
+        labelY: 267, subLabelY: 281, statusDotX: 855, statusDotY: 248 },
+      { id: 2, cx: 805, cy: 350, x: 750, y: 323, w: 110, h: 54, rx: 8,
+        label: 'Endpoint 3', subLabel: '',
+        labelY: 347, subLabelY: 361, statusDotX: 855, statusDotY: 328 },
+      { id: 3, cx: 805, cy: 430, x: 750, y: 403, w: 110, h: 54, rx: 8,
+        label: 'Endpoint 4', subLabel: '',
+        labelY: 427, subLabelY: 441, statusDotX: 855, statusDotY: 408 },
+    ],
+
+    // ── Connection path data (cubic bezier)
+    paths: {
+      clientToGateway: 'M 156 260 C 240 260 320 260 380 260',
+      gatewayToB0:     'M 540 243 C 620 243 670 190 750 190',
+      gatewayToB1:     'M 540 260 C 640 260 680 270 750 270',
+      gatewayToB2:     'M 540 277 C 620 277 670 350 750 350',
+      gatewayToB3:     'M 540 294 C 620 294 670 430 750 430',
+    },
+
+    // ── Colors
+    colors: {
+      azure:      '#0078d4',
+      azureLight: '#50e6ff',
+      healthy:    '#107c10',
+      failed:     '#e81123',
+      failedNode: '#f3f2f1',
+      failedStroke: '#c8c6c4',
+      failover:   '#ffb900',
+      textPrimary: '#1b1b1b',
+      textSecond:  '#666',
+      lineActive:  '#0078d4',
+      lineInactive: '#c8c6c4',
+    },
+
+    // ── Backend path ID map (shared between draw, animate, and update functions)
+    backendPathIds: {
+      0: 'path-gateway-b0',
+      1: 'path-gateway-b1',
+      2: 'path-gateway-b2',
+      3: 'path-gateway-b3',
+    },
+
+    // ── Backend healthy node colors (shared between draw and update)
+    backendHealthy: {
+      fill: '#afc7ea',
+      stroke: '#2f5f9e',
+    },
+  };
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 2 – APPLICATION STATE
+     Single source of truth for all mutable runtime state.
+  ════════════════════════════════════════════════════════════ */
+  const STATE = {
+    isRunning: false,
+    requestInterval: null,    // setInterval handle
+    currentBackendIndex: 0,   // for round-robin
+    failureCount: 0,          // how many backends have failed so far
+    activeAnimations: [],     // cancelAnimationFrame handles
+    backends: [               // mirrors SVG_CONFIG.backends with runtime state
+      { id: 0, status: 'healthy', requestCount: 0 },
+      { id: 1, status: 'healthy', requestCount: 0 },
+      { id: 2, status: 'healthy', requestCount: 0 },
+      { id: 3, status: 'healthy', requestCount: 0 },
+    ],
+  };
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 3 – SVG HELPERS
+     Low-level utilities for creating / querying SVG elements.
+  ════════════════════════════════════════════════════════════ */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /** Create an SVG element with the given tag and attributes. */
+  function svgEl(tag, attrs = {}) {
+    const el = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  /** Append a child element to a parent SVG/element. */
+  function svgAppend(parent, child) {
+    parent.appendChild(child);
+    return child;
+  }
+
+  /** Get the main SVG element. */
+  function getSVG() {
+    return document.getElementById(SVG_CONFIG.svgId);
+  }
+
+  /** Get or create a named layer group inside the SVG. */
+  function getLayer(svg, id) {
+    let layer = svg.getElementById(id);
+    if (!layer) {
+      layer = svgEl('g', { id });
+      svg.appendChild(layer);
+    }
+    return layer;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 4 – DRAW FUNCTIONS
+     Each function draws one logical component of the diagram.
+     All draw functions are idempotent (safe to call on reset).
+  ════════════════════════════════════════════════════════════ */
+
+  /**
+   * Draw the Client node (left side).
+   * Renders a circle with a user icon and labels.
+   */
+  function drawClient(layer) {
+    const { client, colors } = SVG_CONFIG;
+
+    // Outer glow ring (decorative, static)
+    svgAppend(layer, svgEl('circle', {
+      cx: client.cx, cy: client.cy, r: client.r + 6,
+      fill: 'none', stroke: colors.azure, 'stroke-width': 1,
+      'stroke-dasharray': '4 4', opacity: 0.4,
+    }));
+
+    // Main circle
+    svgAppend(layer, svgEl('circle', {
+      cx: client.cx, cy: client.cy, r: client.r,
+      fill: client.fill, stroke: client.stroke,
+      'stroke-width': client.strokeWidth,
+      filter: 'url(#shadow)',
+    }));
+
+    // User icon (path centered at cx, cy)
+    const iconPath = svgEl('path', {
+      d: `M ${client.cx},${client.cy - 15}
+          C ${client.cx + 10},${client.cy - 15} ${client.cx + 14},${client.cy - 8} ${client.cx + 14},${client.cy - 2}
+          C ${client.cx + 14},${client.cy + 6} ${client.cx + 8},${client.cy + 12} ${client.cx},${client.cy + 12}
+          C ${client.cx - 8},${client.cy + 12} ${client.cx - 14},${client.cy + 6} ${client.cx - 14},${client.cy - 2}
+          C ${client.cx - 14},${client.cy - 8} ${client.cx - 10},${client.cy - 15} ${client.cx},${client.cy - 15} Z`,
+      fill: colors.azure, opacity: 0.85,
+    });
+    svgAppend(layer, iconPath);
+
+    // Body arc of user icon
+    const bodyPath = svgEl('path', {
+      d: `M ${client.cx - 18},${client.cy + 28}
+          C ${client.cx - 18},${client.cy + 16} ${client.cx - 8},${client.cy + 10} ${client.cx},${client.cy + 10}
+          C ${client.cx + 8},${client.cy + 10} ${client.cx + 18},${client.cy + 16} ${client.cx + 18},${client.cy + 28}`,
+      fill: 'none', stroke: colors.azure, 'stroke-width': 2.2,
+      opacity: 0.85,
+    });
+    svgAppend(layer, bodyPath);
+
+    // Primary label
+    const label = svgEl('text', {
+      x: client.cx, y: client.labelY,
+      'text-anchor': 'middle', 'font-size': '13',
+      'font-weight': '600', fill: colors.textPrimary,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    label.textContent = 'Client';
+    svgAppend(layer, label);
+
+    // Sub-label
+    const sub = svgEl('text', {
+      x: client.cx, y: client.subLabelY,
+      'text-anchor': 'middle', 'font-size': '10',
+      fill: colors.textSecond,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    sub.textContent = '(User / App)';
+    svgAppend(layer, sub);
+  }
+
+  /**
+   * Draw the Azure API Management (AI Gateway) node (center).
+   * Renders a rounded rect with a gateway icon and labels.
+   */
+  function drawGateway(layer) {
+    const { gateway, colors } = SVG_CONFIG;
+
+    // Node background rect
+    svgAppend(layer, svgEl('rect', {
+      x: gateway.x, y: gateway.y, width: gateway.w, height: gateway.h,
+      rx: gateway.rx,
+      fill: gateway.fill, stroke: gateway.stroke,
+      'stroke-width': gateway.strokeWidth,
+      filter: 'url(#shadow)',
+    }));
+
+    // Use the provided APIM service icon.
+    svgAppend(layer, svgEl('image', {
+      href: 'images/API-Management-Services.png',
+      x: gateway.cx - 26,
+      y: gateway.y + 10,
+      width: 52,
+      height: 52,
+      preserveAspectRatio: 'xMidYMid meet',
+    }));
+
+    // Label
+    const label = svgEl('text', {
+      x: gateway.cx, y: gateway.labelY,
+      'text-anchor': 'middle', 'font-size': '12',
+      'font-weight': '700', fill: colors.textPrimary,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    label.textContent = 'Azure API Management';
+    svgAppend(layer, label);
+
+    // Sub-label
+    const sub = svgEl('text', {
+      x: gateway.cx, y: gateway.subLabelY,
+      'text-anchor': 'middle', 'font-size': '10',
+      fill: colors.azure,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+      'font-weight': '600',
+    });
+    sub.textContent = 'AI Gateway';
+    svgAppend(layer, sub);
+  }
+
+  /**
+   * Draw the Backend Pool dashed container (right group).
+   */
+  function drawBackendPool(layer) {
+    const { pool, colors } = SVG_CONFIG;
+
+    // Pool container
+    svgAppend(layer, svgEl('rect', {
+      x: pool.x, y: pool.y, width: pool.w, height: pool.h,
+      rx: pool.rx,
+      fill: pool.fill, stroke: pool.stroke,
+      'stroke-width': 1.5, 'stroke-dasharray': '8 5',
+      opacity: 1,
+    }));
+
+    // Pool label text
+    const poolLabel = svgEl('text', {
+      x: pool.labelX, y: pool.labelY,
+      'text-anchor': 'middle', 'font-size': '12',
+      'font-weight': '700', fill: pool.stroke,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    });
+    poolLabel.textContent = 'Microsoft Foundry';
+    svgAppend(layer, poolLabel);
+
+    // Microsoft Foundry icon at the top-right of the backend pool box.
+    const msIconSize = 32;
+    svgAppend(layer, svgEl('image', {
+      href: 'images/MS-Foundry.png',
+      x: pool.x + pool.w - 8 - msIconSize,
+      y: pool.y + 8,
+      width: msIconSize,
+      height: msIconSize,
+      preserveAspectRatio: 'xMidYMid meet',
+    }));
+  }
+
+  /**
+   * Draw all backend endpoint nodes.
+   * Each node gets a colored rect, a cloud icon, labels, and a status dot.
+   * Returns an object mapping backend id → { rect, statusDot }.
+   */
+  function drawBackends(layer) {
+    const { backends, colors, backendHealthy } = SVG_CONFIG;
+
+    backends.forEach(cfg => {
+      const stateEntry = STATE.backends.find(b => b.id === cfg.id);
+      const isHealthy = stateEntry.status === 'healthy';
+      const fillColor = isHealthy ? backendHealthy.fill : colors.failedNode;
+      const strokeColor = isHealthy ? backendHealthy.stroke : colors.failedStroke;
+      const dotColor = isHealthy ? colors.healthy : colors.failed;
+
+      // Node rect
+      const rect = svgAppend(layer, svgEl('rect', {
+        id: `backend-rect-${cfg.id}`,
+        x: cfg.x, y: cfg.y, width: cfg.w, height: cfg.h,
+        rx: cfg.rx,
+        fill: fillColor, stroke: strokeColor,
+        'stroke-width': 2, filter: 'url(#shadow)',
+      }));
+
+      // Azure OpenAI icon placed to the right of each endpoint box.
+      svgAppend(layer, svgEl('image', {
+        id: `backend-icon-${cfg.id}`,
+        href: 'images/Azure-OpenAI.png',
+        x: cfg.x + cfg.w + 8,
+        y: cfg.y + 8,
+        width: 24,
+        height: 24,
+        preserveAspectRatio: 'xMidYMid meet',
+        opacity: isHealthy ? 1 : 0.45,
+      }));
+
+      // Label
+      const label = svgAppend(layer, svgEl('text', {
+        id: `backend-label-${cfg.id}`,
+        x: cfg.cx, y: cfg.labelY,
+        'text-anchor': 'middle', 'font-size': '11',
+        'font-weight': '700',
+        fill: isHealthy ? colors.textPrimary : '#a19f9d',
+        'font-family': 'Segoe UI, system-ui, sans-serif',
+      }));
+      label.textContent = cfg.label;
+
+      // Sub-label
+      const sub = svgAppend(layer, svgEl('text', {
+        id: `backend-sublabel-${cfg.id}`,
+        x: cfg.cx, y: cfg.subLabelY,
+        'text-anchor': 'middle', 'font-size': '9',
+        fill: isHealthy ? colors.textSecond : '#bdbdbd',
+        'font-family': 'Segoe UI, system-ui, sans-serif',
+      }));
+      sub.textContent = '';
+
+      // Status dot (top-right corner)
+      const statusDot = svgAppend(layer, svgEl('circle', {
+        id: `backend-status-${cfg.id}`,
+        cx: cfg.statusDotX, cy: cfg.statusDotY, r: 6,
+        fill: dotColor, stroke: '#fff', 'stroke-width': 1.5,
+      }));
+
+      // Status label inside dot area
+      const statusLabel = svgAppend(layer, svgEl('text', {
+        id: `backend-statuslabel-${cfg.id}`,
+        x: cfg.cx, y: cfg.y + cfg.h + 14,
+        'text-anchor': 'middle', 'font-size': '9',
+        fill: isHealthy ? colors.healthy : colors.failed,
+        'font-weight': '600',
+        'font-family': 'Segoe UI, system-ui, sans-serif',
+      }));
+      statusLabel.textContent = isHealthy ? '● Healthy' : '✕ Failed';
+    });
+  }
+
+  /**
+   * Draw all connection lines (path elements) between nodes.
+   * Paths are drawn in the 'lines' layer so packets appear on top.
+   */
+  function drawConnections(layer) {
+    const { paths, colors } = SVG_CONFIG;
+
+    const pathDefs = [
+      // Client → Gateway
+      {
+        id: 'path-client-gateway',
+        d: paths.clientToGateway,
+        stateKey: null,  // always active
+      },
+      // Gateway → Backend 0
+      {
+        id: 'path-gateway-b0',
+        d: paths.gatewayToB0,
+        stateKey: 0,
+      },
+      // Gateway → Backend 1
+      {
+        id: 'path-gateway-b1',
+        d: paths.gatewayToB1,
+        stateKey: 1,
+      },
+      // Gateway → Backend 2
+      {
+        id: 'path-gateway-b2',
+        d: paths.gatewayToB2,
+        stateKey: 2,
+      },
+      // Gateway → Backend 3
+      {
+        id: 'path-gateway-b3',
+        d: paths.gatewayToB3,
+        stateKey: 3,
+      },
+    ];
+
+    pathDefs.forEach(({ id, d, stateKey }) => {
+      const isActive = stateKey === null
+        ? true
+        : STATE.backends[stateKey].status === 'healthy';
+
+      svgAppend(layer, svgEl('path', {
+        id,
+        d,
+        fill: 'none',
+        stroke: isActive ? colors.lineActive : colors.lineInactive,
+        'stroke-width': isActive ? 2 : 1.5,
+        'stroke-dasharray': isActive ? 'none' : '6 4',
+        'marker-end': isActive ? 'url(#arrow)' : 'url(#arrow-failed)',
+        opacity: isActive ? 1 : 0.4,
+      }));
+    });
+  }
+
+  /**
+   * Draw a "Load Balancing" mode badge between Gateway and Pool.
+   */
+  function drawModeBadge(layer) {
+    const bx = 610, by = 252;
+    svgAppend(layer, svgEl('rect', {
+      id: 'mode-badge-bg',
+      x: bx - 44, y: by - 11, width: 88, height: 22,
+      rx: 11, fill: '#fff',
+      stroke: '#0078d4', 'stroke-width': 1.5,
+    }));
+    const t = svgAppend(layer, svgEl('text', {
+      id: 'mode-badge-text',
+      x: bx, y: by + 4,
+      'text-anchor': 'middle', 'font-size': '10',
+      'font-weight': '700', fill: '#0078d4',
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+    }));
+    t.textContent = '⚖ Round Robin';
+  }
+
+  /**
+   * Master init – clears and redraws the entire static diagram.
+   * Called on page load and on Reset.
+   */
+  function initSVG() {
+    const svg = getSVG();
+
+    // Remove all existing layers (for reset)
+    ['layer-bg', 'layer-lines', 'layer-nodes', 'layer-packets'].forEach(id => {
+      const el = svg.getElementById(id);
+      if (el) el.remove();
+    });
+
+    // Create ordered layers (painters algorithm: bg < lines < nodes < packets on top)
+    const layerBg      = getLayer(svg, 'layer-bg');
+    const layerLines   = getLayer(svg, 'layer-lines');
+    const layerNodes   = getLayer(svg, 'layer-nodes');
+    const layerPackets = getLayer(svg, 'layer-packets');
+
+    // Draw diagram background gradient
+    drawDiagramBg(layerBg);
+
+    // Draw static components
+    drawConnections(layerLines);
+    drawBackendPool(layerNodes);
+    drawClient(layerNodes);
+    drawGateway(layerNodes);
+    drawBackends(layerNodes);
+    drawModeBadge(layerNodes);
+  }
+
+  /** Draw a subtle grid background for the diagram area using an SVG pattern. */
+  function drawDiagramBg(layer) {
+    const svg = getSVG();
+    const defs = svg.querySelector('defs');
+
+    // Create a reusable dot-grid pattern (1 element instead of ~312)
+    const pattern = svgEl('pattern', {
+      id: 'dot-grid', width: 40, height: 40,
+      patternUnits: 'userSpaceOnUse',
+    });
+    svgAppend(pattern, svgEl('circle', {
+      cx: 20, cy: 20, r: 1, fill: '#c8e0f4', opacity: 0.5,
+    }));
+    svgAppend(defs, pattern);
+
+    // Single rect fills the entire diagram area with the pattern
+    svgAppend(layer, svgEl('rect', {
+      x: 0, y: 0, width: 1000, height: 520,
+      fill: 'url(#dot-grid)',
+    }));
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 5 – ANIMATION ENGINE
+     Core animation functions using requestAnimationFrame +
+     SVGPathElement.getPointAtLength() for smooth movement.
+  ════════════════════════════════════════════════════════════ */
+
+  /**
+   * Animate a packet (circle) along a given SVG path element.
+   *
+   * @param {SVGPathElement} pathEl  - The path to travel along
+   * @param {string}         color   - Fill color of the packet dot
+   * @param {number}         duration - Animation duration in ms
+   * @param {Function}       onComplete - Called when animation finishes
+   * @returns {number} rAF handle (can be cancelled via cancelAnimationFrame)
+   */
+  function animatePacket(pathEl, color, duration, onComplete) {
+    const svg = getSVG();
+    const packetLayer = svg.getElementById('layer-packets');
+    const totalLength = pathEl.getTotalLength();
+
+    // Create the animated dot
+    const dot = svgAppend(packetLayer, svgEl('circle', {
+      r: 7, fill: color,
+      stroke: '#fff', 'stroke-width': 1.5,
+      filter: 'url(#glow)',
+    }));
+
+    // Position at path start immediately
+    const startPt = pathEl.getPointAtLength(0);
+    dot.setAttribute('cx', startPt.x);
+    dot.setAttribute('cy', startPt.y);
+
+    const startTime = performance.now();
+    let rafHandle;
+
+    function step(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+
+      // Ease-in-out cubic for smooth motion
+      const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const dist = eased * totalLength;
+      const pt = pathEl.getPointAtLength(dist);
+
+      dot.setAttribute('cx', pt.x);
+      dot.setAttribute('cy', pt.y);
+
+      if (t < 1) {
+        rafHandle = requestAnimationFrame(step);
+      } else {
+        // Animation complete — remove dot and tracking entry
+        dot.remove();
+        const idx = STATE.activeAnimations.indexOf(animEntry);
+        if (idx !== -1) STATE.activeAnimations.splice(idx, 1);
+        if (typeof onComplete === 'function') onComplete();
+      }
+    }
+
+    rafHandle = requestAnimationFrame(step);
+
+    // Track handle so reset can cancel in-flight animations
+    const animEntry = { rafHandle, dot };
+    STATE.activeAnimations.push(animEntry);
+    return rafHandle;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 6 – ROUTING LOGIC
+     Round-robin backend selection with healthy-only routing.
+  ════════════════════════════════════════════════════════════ */
+
+  /**
+   * Get the next healthy backend using round-robin.
+   * Returns the STATE backends entry, or null if all are failed.
+   */
+  function getNextHealthyBackend() {
+    const { backends } = STATE;
+    const healthyCount = backends.filter(b => b.status === 'healthy').length;
+    if (healthyCount === 0) return null;
+
+    // Advance index until we land on a healthy backend
+    let attempts = 0;
+    while (attempts < backends.length) {
+      const idx = STATE.currentBackendIndex % backends.length;
+      STATE.currentBackendIndex++;
+      if (backends[idx].status === 'healthy') {
+        return backends[idx];
+      }
+      attempts++;
+    }
+    return null;
+  }
+
+  /**
+   * Run one full simulated request cycle:
+   *   Phase 1: client → gateway  (phase1Duration ms)
+   *   Phase 2: gateway → chosen backend  (phase2Duration ms)
+   * Shows a floating label on completion.
+   */
+  function simulateRequest() {
+    const svg = getSVG();
+    const targetBackend = getNextHealthyBackend();
+
+    if (!targetBackend) {
+      // No healthy backends — show warning label and bail
+      showFloatingLabel('⚠ No backends available', SVG_CONFIG.gateway.cx, SVG_CONFIG.gateway.cy - 30, '#e81123');
+      return;
+    }
+
+    // Determine if any previously failed backend means this is a failover route
+    const isFailover = STATE.failureCount > 0;
+    const phase2Color = isFailover ? SVG_CONFIG.colors.failover : SVG_CONFIG.colors.azureLight;
+    const phase2Duration = 650;
+    const phase1Duration = 700;
+
+    // Phase 1: client → gateway
+    const pathClientGateway = svg.getElementById('path-client-gateway');
+    animatePacket(pathClientGateway, SVG_CONFIG.colors.azure, phase1Duration, () => {
+      // Brief gateway pulse on receipt
+      triggerGatewayPulse();
+
+      // Phase 2: gateway → target backend
+      const backendPathEl = svg.getElementById(SVG_CONFIG.backendPathIds[targetBackend.id]);
+      if (!backendPathEl) return;
+
+      animatePacket(backendPathEl, phase2Color, phase2Duration, () => {
+        // Increment request count on backend
+        targetBackend.requestCount++;
+
+        // Show floating label
+        const backendCfg = SVG_CONFIG.backends.find(b => b.id === targetBackend.id);
+        if (isFailover) {
+          showFloatingLabel('↻ Failover', SVG_CONFIG.gateway.cx + 80, SVG_CONFIG.gateway.cy - 10, SVG_CONFIG.colors.failover);
+        } else {
+          showFloatingLabel('✓', backendCfg.cx, backendCfg.cy - 35, SVG_CONFIG.colors.healthy);
+        }
+      });
+    });
+  }
+
+  /**
+   * Trigger a brief expanding ring around the gateway node to show receipt.
+   * (Purely decorative, gives life to the gateway on each request.)
+   */
+  function triggerGatewayPulse() {
+    const svg = getSVG();
+    const layer = svg.getElementById('layer-packets');
+    const { gateway, colors } = SVG_CONFIG;
+
+    const ring = svgAppend(layer, svgEl('circle', {
+      cx: gateway.cx, cy: gateway.cy,
+      r: 52, fill: 'none',
+      stroke: colors.azure, 'stroke-width': 2,
+      class: 'gateway-pulse',
+    }));
+
+    // Remove after animation completes (~800ms)
+    setTimeout(() => ring.remove(), 850);
+  }
+
+  /**
+   * Show a temporary floating text label that fades up and disappears.
+   *
+   * @param {string} text  - Label text
+   * @param {number} x     - SVG x coordinate
+   * @param {number} y     - SVG y coordinate (label will float upward)
+   * @param {string} color - Fill color
+   */
+  function showFloatingLabel(text, x, y, color) {
+    const svg = getSVG();
+    const layer = svg.getElementById('layer-packets');
+
+    const label = svgAppend(layer, svgEl('text', {
+      x, y,
+      'text-anchor': 'middle',
+      'font-size': '12',
+      'font-weight': '700',
+      fill: color,
+      'font-family': 'Segoe UI, system-ui, sans-serif',
+      class: 'floating-label',
+    }));
+    label.textContent = text;
+
+    // Remove after animation ends
+    setTimeout(() => label.remove(), 1450);
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 7 – VISUAL STATE UPDATES
+     Functions that reflect STATE changes in the SVG diagram.
+  ════════════════════════════════════════════════════════════ */
+
+  /**
+   * Update the visual appearance of a backend node to reflect its status.
+   *
+   * @param {number} id     - Backend ID (0–3)
+   * @param {string} status - 'healthy' | 'failed'
+   */
+  function updateBackendVisual(id, status) {
+    const svg = getSVG();
+    const { colors } = SVG_CONFIG;
+    const isHealthy = status === 'healthy';
+
+    // Node rect
+    const rect = svg.getElementById(`backend-rect-${id}`);
+    if (rect) {
+      rect.setAttribute('fill', isHealthy ? SVG_CONFIG.backendHealthy.fill : colors.failedNode);
+      rect.setAttribute('stroke', isHealthy ? SVG_CONFIG.backendHealthy.stroke : colors.failedStroke);
+    }
+
+    // Cloud icon
+    const icon = svg.getElementById(`backend-icon-${id}`);
+    if (icon) {
+      icon.setAttribute('opacity', isHealthy ? '1' : '0.45');
+    }
+
+    // Text label
+    const label = svg.getElementById(`backend-label-${id}`);
+    if (label) label.setAttribute('fill', isHealthy ? colors.textPrimary : '#a19f9d');
+
+    const sublabel = svg.getElementById(`backend-sublabel-${id}`);
+    if (sublabel) sublabel.setAttribute('fill', isHealthy ? colors.textSecond : '#bdbdbd');
+
+    // Status dot
+    const dot = svg.getElementById(`backend-status-${id}`);
+    if (dot) dot.setAttribute('fill', isHealthy ? colors.healthy : colors.failed);
+
+    // Status text label
+    const statusLabel = svg.getElementById(`backend-statuslabel-${id}`);
+    if (statusLabel) {
+      statusLabel.textContent = isHealthy ? '● Healthy' : '✕ Failed';
+      statusLabel.setAttribute('fill', isHealthy ? colors.healthy : colors.failed);
+    }
+
+    // Connection path
+    const pathEl = svg.getElementById(SVG_CONFIG.backendPathIds[id]);
+    if (pathEl) {
+      pathEl.setAttribute('stroke', isHealthy ? colors.lineActive : colors.lineInactive);
+      pathEl.setAttribute('stroke-width', isHealthy ? '2' : '1.5');
+      pathEl.setAttribute('stroke-dasharray', isHealthy ? 'none' : '6 4');
+      pathEl.setAttribute('marker-end', isHealthy ? 'url(#arrow)' : 'url(#arrow-failed)');
+      pathEl.setAttribute('opacity', isHealthy ? '1' : '0.35');
+    }
+
+    // Update mode badge when all backends alive or any failed
+    updateModeBadge();
+  }
+
+  /** Update the center mode badge text: "Round Robin" vs "Failover Active". */
+  function updateModeBadge() {
+    const svg = getSVG();
+    const text = svg.getElementById('mode-badge-text');
+    const bg   = svg.getElementById('mode-badge-bg');
+    if (!text || !bg) return;
+
+    const allHealthy = STATE.backends.every(b => b.status === 'healthy');
+    const allFailed  = STATE.backends.every(b => b.status === 'failed');
+
+    if (allFailed) {
+      text.textContent = '⚠ No Backends';
+      text.setAttribute('fill', SVG_CONFIG.colors.failed);
+      bg.setAttribute('stroke', SVG_CONFIG.colors.failed);
+    } else if (!allHealthy) {
+      text.textContent = '↻ Failover Active';
+      text.setAttribute('fill', SVG_CONFIG.colors.failover);
+      bg.setAttribute('stroke', SVG_CONFIG.colors.failover);
+    } else {
+      text.textContent = '⚖ Round Robin';
+      text.setAttribute('fill', SVG_CONFIG.colors.azure);
+      bg.setAttribute('stroke', SVG_CONFIG.colors.azure);
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 8 – FLOW CONTROL
+     Start / Stop / Failure / Reset entry points.
+  ════════════════════════════════════════════════════════════ */
+
+  /** Start the request flow simulation. */
+  function startFlow() {
+    if (STATE.isRunning) return;
+    STATE.isRunning = true;
+
+    // Check if any backends are available
+    const healthyCount = STATE.backends.filter(b => b.status === 'healthy').length;
+    if (healthyCount === 0) {
+      alert('All backends are failed. Click Reset to restore them.');
+      STATE.isRunning = false;
+      return;
+    }
+
+    // Fire first request immediately, then at intervals
+    simulateRequest();
+    STATE.requestInterval = setInterval(simulateRequest, 1500);
+
+    // Update button visibility
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display  = '';
+    document.getElementById('btn-failure').disabled    = false;
+  }
+
+  /** Stop the request flow simulation. */
+  function stopFlow() {
+    if (!STATE.isRunning) return;
+    STATE.isRunning = false;
+
+    clearInterval(STATE.requestInterval);
+    STATE.requestInterval = null;
+
+    document.getElementById('btn-start').style.display = '';
+    document.getElementById('btn-stop').style.display  = 'none';
+  }
+
+  /**
+   * Simulate a backend failure.
+   * Marks the next healthy backend as "failed" and updates visuals.
+   * Disables the button when all backends have failed.
+   */
+  function triggerFailure() {
+    // Find the first healthy backend to fail (in order: 0, 1, 2)
+    const target = STATE.backends.find(b => b.status === 'healthy');
+    if (!target) return;
+
+    // Mark as failed
+    target.status = 'failed';
+    STATE.failureCount++;
+
+    // Update visual
+    updateBackendVisual(target.id, 'failed');
+
+    // Show "Failure!" label near the backend
+    const backendCfg = SVG_CONFIG.backends.find(b => b.id === target.id);
+    showFloatingLabel('⚡ Failed!', backendCfg.cx, backendCfg.cy - 35, SVG_CONFIG.colors.failed);
+
+    // Check if all backends are now failed
+    const allFailed = STATE.backends.every(b => b.status === 'failed');
+    if (allFailed) {
+      document.getElementById('btn-failure').disabled = true;
+      // Stop the flow since there's nothing to route to
+      if (STATE.isRunning) {
+        stopFlow();
+        showFloatingLabel('⚠ All backends down!', SVG_CONFIG.gateway.cx, SVG_CONFIG.gateway.cy - 40, SVG_CONFIG.colors.failed);
+      }
+    }
+  }
+
+  /**
+   * Reset the entire simulation to its initial state.
+   * - Cancels all running animations
+   * - Restores all backends to healthy
+   * - Redraws the static diagram
+   * - Resets all button states
+   */
+  function resetAll() {
+    // Cancel all in-flight rAF animations
+    STATE.activeAnimations.forEach(({ rafHandle, dot }) => {
+      cancelAnimationFrame(rafHandle);
+      if (dot && dot.parentNode) dot.remove();
+    });
+
+    // Cancel the request interval
+    if (STATE.requestInterval) {
+      clearInterval(STATE.requestInterval);
+    }
+
+    // Clean up any temporary SVG elements (floating labels, glow dots)
+    const svg = getSVG();
+    const layer = svg.getElementById('layer-packets');
+    if (layer) layer.innerHTML = '';
+
+    // Reset state
+    STATE.isRunning = false;
+    STATE.requestInterval = null;
+    STATE.currentBackendIndex = 0;
+    STATE.failureCount = 0;
+    STATE.activeAnimations = [];
+    STATE.backends.forEach(b => {
+      b.status = 'healthy';
+      b.requestCount = 0;
+    });
+
+    // Redraw
+    initSVG();
+
+    // Reset buttons
+    document.getElementById('btn-start').style.display   = '';
+    document.getElementById('btn-stop').style.display    = 'none';
+    document.getElementById('btn-failure').disabled      = true;
+    document.getElementById('btn-reset').disabled        = false;
+  }
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 9 – BUTTON WIRING
+  ════════════════════════════════════════════════════════════ */
+
+  document.getElementById('btn-start').addEventListener('click',   startFlow);
+  document.getElementById('btn-stop').addEventListener('click',    stopFlow);
+  document.getElementById('btn-failure').addEventListener('click', triggerFailure);
+  document.getElementById('btn-reset').addEventListener('click',   resetAll);
+
+  /* ════════════════════════════════════════════════════════════
+     SECTION 10 – BOOT
+  ════════════════════════════════════════════════════════════ */
+  initSVG();
+
+  </script>
+</body>
+</html>
