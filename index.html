@@ -276,16 +276,16 @@
     // ── Individual backend nodes (4 total)
     backends: [
       { id: 0, cx: 805, cy: 190, x: 750, y: 163, w: 110, h: 54, rx: 8,
-        label: 'Endpoint 1', subLabel: '',
+        label: 'PTU DZ', subLabel: 'swedencentral',
         labelY: 187, subLabelY: 201, statusDotX: 855, statusDotY: 168 },
       { id: 1, cx: 805, cy: 270, x: 750, y: 243, w: 110, h: 54, rx: 8,
-        label: 'Endpoint 2', subLabel: '',
+        label: 'PayGo DZ', subLabel: 'swedencentral',
         labelY: 267, subLabelY: 281, statusDotX: 855, statusDotY: 248 },
       { id: 2, cx: 805, cy: 350, x: 750, y: 323, w: 110, h: 54, rx: 8,
-        label: 'Endpoint 3', subLabel: '',
+        label: 'PayGo DZ', subLabel: 'germanywestcentral',
         labelY: 347, subLabelY: 361, statusDotX: 855, statusDotY: 328 },
       { id: 3, cx: 805, cy: 430, x: 750, y: 403, w: 110, h: 54, rx: 8,
-        label: 'Endpoint 4', subLabel: '',
+        label: 'PayGo Global', subLabel: 'germanywestcentral',
         labelY: 427, subLabelY: 441, statusDotX: 855, statusDotY: 408 },
     ],
 
@@ -590,7 +590,7 @@
         fill: isHealthy ? colors.textSecond : '#bdbdbd',
         'font-family': 'Segoe UI, system-ui, sans-serif',
       }));
-      sub.textContent = '';
+      sub.textContent = cfg.subLabel;
 
       // Status dot (top-right corner)
       const statusDot = svgAppend(layer, svgEl('circle', {
@@ -599,16 +599,17 @@
         fill: dotColor, stroke: '#fff', 'stroke-width': 1.5,
       }));
 
-      // Status label inside dot area
+      // Status label above the box
       const statusLabel = svgAppend(layer, svgEl('text', {
         id: `backend-statuslabel-${cfg.id}`,
-        x: cfg.cx, y: cfg.y + cfg.h + 14,
+        x: cfg.cx, y: cfg.y - 4,
         'text-anchor': 'middle', 'font-size': '9',
         fill: isHealthy ? colors.healthy : colors.failed,
         'font-weight': '600',
         'font-family': 'Segoe UI, system-ui, sans-serif',
       }));
-      statusLabel.textContent = isHealthy ? '● Healthy' : '✕ Failed';
+      const endpointNum = cfg.id + 1;
+      statusLabel.textContent = isHealthy ? `Endpoint ${endpointNum} ● Healthy` : `Endpoint ${endpointNum} ✕ Failed`;
     });
   }
 
@@ -974,7 +975,8 @@
     // Status text label
     const statusLabel = svg.getElementById(`backend-statuslabel-${id}`);
     if (statusLabel) {
-      statusLabel.textContent = isHealthy ? '● Healthy' : '✕ Failed';
+      const endpointNum = id + 1;
+      statusLabel.textContent = isHealthy ? `Endpoint ${endpointNum} ● Healthy` : `Endpoint ${endpointNum} ✕ Failed`;
       statusLabel.setAttribute('fill', isHealthy ? colors.healthy : colors.failed);
     }
 

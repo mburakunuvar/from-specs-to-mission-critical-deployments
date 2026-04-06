@@ -1,0 +1,6 @@
+# Minimal Python dependencies required by runbook.ipynb in this repository.
+requests
+pandas
+matplotlib
+openai
+ipykernel
