@@ -675,7 +675,9 @@
    * Draw a "Load Balancing" mode badge between Gateway and Pool.
    */
   function drawModeBadge(layer) {
-    const bx = 610, by = 252;
+    // Match the design: badge anchored to the pool border and between Endpoint 2 and 3.
+    const bx = SVG_CONFIG.pool.x - 44;
+    const by = ((SVG_CONFIG.backends[1].cy + SVG_CONFIG.backends[2].cy) / 2) - 10;
     svgAppend(layer, svgEl('rect', {
       id: 'mode-badge-bg',
       x: bx - 44, y: by - 11, width: 88, height: 22,
@@ -813,28 +815,42 @@
 
   /* ════════════════════════════════════════════════════════════
      SECTION 6 – ROUTING LOGIC
-     Round-robin backend selection with healthy-only routing.
+     Primary-first with Priority 2 alternating failover.
   ════════════════════════════════════════════════════════════ */
 
   /**
-   * Get the next healthy backend using round-robin.
-   * Returns the STATE backends entry, or null if all are failed.
+   * Routing behavior:
+   * 1) Endpoint 1 receives all traffic while healthy.
+   * 2) If Endpoint 1 fails, alternate between Endpoint 2 and 3 when both are healthy.
+   * 3) If only one of Endpoint 2/3 is healthy, use that one.
+   * 4) Endpoint 4 is last resort.
    */
   function getNextHealthyBackend() {
-    const { backends } = STATE;
-    const healthyCount = backends.filter(b => b.status === 'healthy').length;
-    if (healthyCount === 0) return null;
+    const backends = STATE.backends;
 
-    // Advance index until we land on a healthy backend
-    let attempts = 0;
-    while (attempts < backends.length) {
-      const idx = STATE.currentBackendIndex % backends.length;
-      STATE.currentBackendIndex++;
-      if (backends[idx].status === 'healthy') {
-        return backends[idx];
-      }
-      attempts++;
+    // Endpoint 1 (id:0) is always preferred while healthy.
+    if (backends[0].status === 'healthy') {
+      STATE.currentBackendIndex = 0;
+      return backends[0];
     }
+
+    // Priority 2: alternate between endpoint 2 and 3 when both are healthy.
+    const p2Healthy = [backends[1], backends[2]].filter(b => b.status === 'healthy');
+    if (p2Healthy.length === 2) {
+      const selected = p2Healthy[STATE.currentBackendIndex % 2];
+      STATE.currentBackendIndex++;
+      return selected;
+    }
+
+    if (p2Healthy.length === 1) {
+      return p2Healthy[0];
+    }
+
+    // Priority 3 fallback: endpoint 4.
+    if (backends[3].status === 'healthy') {
+      return backends[3];
+    }
+
     return null;
   }
 
@@ -846,35 +862,47 @@
    */
   function simulateRequest() {
     const svg = getSVG();
-    const targetBackend = getNextHealthyBackend();
+    const isFailover = STATE.failureCount > 0;
+    const phase2Duration = 650;
+    const phase1Duration = 700;
 
+    // Failover dual-fan: both Endpoint 2 (id:1) and Endpoint 3 (id:2) healthy →
+    // one blue ball reaches the gateway, then two orange balls leave simultaneously.
+    const bothP2Healthy = isFailover
+      && STATE.backends[1].status === 'healthy'
+      && STATE.backends[2].status === 'healthy';
+
+    if (bothP2Healthy) {
+      const pathClientGateway = svg.getElementById('path-client-gateway');
+      animatePacket(pathClientGateway, SVG_CONFIG.colors.azure, phase1Duration, () => {
+        triggerGatewayPulse();
+        [STATE.backends[1], STATE.backends[2]].forEach(backend => {
+          const backendPathEl = svg.getElementById(SVG_CONFIG.backendPathIds[backend.id]);
+          if (!backendPathEl) return;
+          animatePacket(backendPathEl, SVG_CONFIG.colors.failover, phase2Duration, () => {
+            backend.requestCount++;
+            showFloatingLabel('↻ Failover', SVG_CONFIG.gateway.cx + 80, SVG_CONFIG.gateway.cy - 10, SVG_CONFIG.colors.failover);
+          });
+        });
+      });
+      return;
+    }
+
+    // Single-target routing: Endpoint 1, or surviving P2/P3 endpoint.
+    const targetBackend = getNextHealthyBackend();
     if (!targetBackend) {
-      // No healthy backends — show warning label and bail
       showFloatingLabel('⚠ No backends available', SVG_CONFIG.gateway.cx, SVG_CONFIG.gateway.cy - 30, '#e81123');
       return;
     }
 
-    // Determine if any previously failed backend means this is a failover route
-    const isFailover = STATE.failureCount > 0;
     const phase2Color = isFailover ? SVG_CONFIG.colors.failover : SVG_CONFIG.colors.azureLight;
-    const phase2Duration = 650;
-    const phase1Duration = 700;
-
-    // Phase 1: client → gateway
     const pathClientGateway = svg.getElementById('path-client-gateway');
     animatePacket(pathClientGateway, SVG_CONFIG.colors.azure, phase1Duration, () => {
-      // Brief gateway pulse on receipt
       triggerGatewayPulse();
-
-      // Phase 2: gateway → target backend
       const backendPathEl = svg.getElementById(SVG_CONFIG.backendPathIds[targetBackend.id]);
       if (!backendPathEl) return;
-
       animatePacket(backendPathEl, phase2Color, phase2Duration, () => {
-        // Increment request count on backend
         targetBackend.requestCount++;
-
-        // Show floating label
         const backendCfg = SVG_CONFIG.backends.find(b => b.id === targetBackend.id);
         if (isFailover) {
           showFloatingLabel('↻ Failover', SVG_CONFIG.gateway.cx + 80, SVG_CONFIG.gateway.cy - 10, SVG_CONFIG.colors.failover);

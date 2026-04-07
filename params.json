@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apimSku": {
+      "value": "Basicv2"
+    },
+    "aiServicesConfig": {
+      "value": [
+        {
+          "name": "Endpoint1-PTU-DZ-Sweden",
+          "location": "swedencentral",
+          "priority": 1
+        },
+        {
+          "name": "Endpoint2-PayGo-DZ-Sweden",
+          "location": "swedencentral",
+          "priority": 2,
+          "weight": 50
+        },
+        {
+          "name": "Endpoint3-PayGo-DZ-Germany",
+          "location": "germanywestcentral",
+          "priority": 2,
+          "weight": 50
+        },
+        {
+          "name": "Endpoint4-PayGo-Global-Germany",
+          "location": "germanywestcentral",
+          "priority": 3
+        }
+      ]
+    },
+    "modelsConfig": {
+      "value": [
+        {
+          "name": "gpt-4o-mini",
+          "publisher": "OpenAI",
+          "version": "2024-07-18",
+          "sku": "GlobalStandard",
+          "capacity": 1
+        }
+      ]
+    },
+    "apimSubscriptionsConfig": {
+      "value": [
+        {
+          "name": "subscription1",
+          "displayName": "Subscription 1"
+        }
+      ]
+    },
+    "inferenceAPIPath": {
+      "value": "inference"
+    },
+    "inferenceAPIType": {
+      "value": "AzureOpenAI"
+    },
+    "foundryProjectName": {
+      "value": "from-specs-to-mission-critical-ai"
+    }
+  }
+}
