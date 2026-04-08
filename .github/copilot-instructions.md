@@ -30,3 +30,10 @@
 ## Documentation
 - Product and behavior requirements live in [prompting.md](../prompting.md).
 - Keep this file short and actionable; link to source docs instead of duplicating specs.
+
+## Active Technologies
+- JavaScript (ES6+ vanilla), Bicep (Azure CLI 2.x), Python 3.12 + None for HTML layer; Azure Bicep CLI for infra; `openai`, `requests`, `pandas`, `matplotlib` for runbook (001-ai-gateway-routing-demo)
+- N/A (stateless demo; Azure resources provisioned at deploy time) (001-ai-gateway-routing-demo)
+
+## Recent Changes
+- 001-ai-gateway-routing-demo: Added JavaScript (ES6+ vanilla), Bicep (Azure CLI 2.x), Python 3.12 + None for HTML layer; Azure Bicep CLI for infra; `openai`, `requests`, `pandas`, `matplotlib` for runbook

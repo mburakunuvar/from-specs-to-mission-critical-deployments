@@ -1,6 +1,40 @@
 # from-specs-to-mission-critical-deployments
 How to use Github spec-kit to build an AI App that'll use multiple MS Foundry Models behind Azure AI Gateway
 
+## Why Spec-Kit?
+
+This project uses [GitHub Spec-Kit](https://github.com/github/spec-kit) to make the development process **reproducible and AI-assisted**. Spec-Kit is a spec-driven development workflow toolkit that structures how AI agents (like Copilot) build and modify code.
+
+### What Spec-Kit provides
+
+| Concept | What it provides |
+|---------|-----------------|
+| **Constitution** | Project principles and conventions that AI agents follow |
+| **Specs** | Templates for writing feature requirements |
+| **Plans** | Structured implementation plans derived from specs |
+| **Tasks** | Breakdowns with dependencies for execution |
+| **Integrations** | Hooks into AI agents (Copilot, etc.) |
+
+### What it solves for reusability
+
+If someone wants to build a similar project from scratch (their own APIM + AI Foundry gateway), Spec-Kit can:
+
+- Encode architecture decisions and conventions into **specs and a constitution**
+- Guide an AI agent step-by-step through creating the Bicep, notebook, and demo artifacts
+- Ensure consistency — anyone following the specs gets a similar, quality baseline
+
+### What it does not cover
+
+Spec-Kit is not a scaffolding or template distribution tool. It does not package artifacts into a starter kit, provide a `create-from-template` command, or handle deployment orchestration.
+
+### Combining approaches for full reusability
+
+| Layer | Tool |
+|-------|------|
+| **Development process** (how to build it) | Spec-Kit |
+| **Template distribution** (clone and customize) | GitHub Template Repo, `azd init`, or Cookiecutter |
+| **Deployment orchestration** (run it) | Azure Developer CLI (`azd`), or the runbook in this repo |
+
 ## Notebook Setup
 
 Use `runbook.ipynb` for the end-to-end lab flow.
@@ -143,9 +177,16 @@ The runbook tests traffic routing across four AI Foundry backends behind an APIM
 - **Step 9b:** Query APIM traces for exact backend attribution across all 20 requests  
 - **Step 9c:** Pretty chart of Step 9b data — authoritative proof of which backends handled traffic
 
+**Phase 3: Deterministic failover (5 requests; forces Endpoint 4)**
+- **Step 10:** Overview, prerequisites, and safety notes — temporary override scope explained
+- **Step 10a:** Snapshot the current APIM backend pool + apply Endpoint-4-only override
+- **Step 10b:** Run 5 targeted requests while override is active; capture trace IDs
+- **Step 10c:** Query APIM traces — confirms all 5 requests routed exclusively to Endpoint 4
+- **Step 10d:** Restore original backend pool — APIM returns to full priority-based routing
+
 **When to use which:**
 - **For testing/iteration:** Runs Steps 8a + 9a (fast, no backend queries needed)
-- **For live demo:** Run the full chain (8b + 8c for baseline proof; 9b + 9c for extended failover proof)
+- **For live demo:** Run the full chain (8b + 8c for baseline proof; 9b + 9c for extended failover proof; 10a–10d for deterministic Endpoint 4 failover proof)
 
 | Step | Purpose | Data source | Accuracy |
 |------|---------|-------------|----------|
@@ -157,6 +198,11 @@ The runbook tests traffic routing across four AI Foundry backends behind an APIM
 | **9a** | Extended visualization (quick) | Headers + trace IDs | Best-available |
 | **9b** | Extended diagnostics | APIM traces via `listTrace` API | **Exact backend hostnames** |
 | **9c** | Extended visualization (authoritative) | Step 9b results | **Exact match** to 9b data |
+| **10** | Failover test overview + safety notes | — | — |
+| **10a** | Snapshot pool + apply Endpoint-4-only override | APIM management API | **Exact APIM backend pool state** |
+| **10b** | Deterministic failover traffic (5 req) | Response headers + APIM trace IDs | Client-visible signals |
+| **10c** | Failover attribution (authoritative) | APIM traces via `listTrace` API | **Exact backend hostnames** |
+| **10d** | Restore original backend pool | APIM management API | **Exact APIM backend pool state** |
 
 ## Kernel Troubleshooting
 
