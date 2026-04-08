@@ -222,7 +222,9 @@
   <div class="controls">
     <button id="btn-start"   class="btn btn-primary">▶ Start Flow</button>
     <button id="btn-stop"    class="btn btn-stop"    style="display:none">⏹ Stop Flow</button>
-    <button id="btn-failure" class="btn btn-danger"  disabled>⚡ Simulate Failure</button>
+    <button id="btn-failure-0" class="btn btn-danger" disabled>⚡ Simulate Failure1</button>
+    <button id="btn-failure-1" class="btn btn-danger" disabled>⚡ Simulate Failure2</button>
+    <button id="btn-failure-2" class="btn btn-danger" disabled>⚡ Simulate Failure3</button>
     <button id="btn-reset"   class="btn btn-neutral">↺ Reset</button>
   </div>
 
@@ -314,12 +316,12 @@
     },
 
     // ── Backend path ID map (shared between draw, animate, and update functions)
-    backendPathIds: {
-      0: 'path-gateway-b0',
-      1: 'path-gateway-b1',
-      2: 'path-gateway-b2',
-      3: 'path-gateway-b3',
-    },
+    backendPathIds: [
+      'path-gateway-b0',
+      'path-gateway-b1',
+      'path-gateway-b2',
+      'path-gateway-b3',
+    ],
 
     // ── Backend healthy node colors (shared between draw and update)
     backendHealthy: {
@@ -336,7 +338,7 @@
     isRunning: false,
     requestInterval: null,    // setInterval handle
     currentBackendIndex: 0,   // for round-robin
-    failureCount: 0,          // how many backends have failed so far
+    failureCount: 0,          // how many simulated backend failures have occurred so far
     activeAnimations: [],     // cancelAnimationFrame handles
     backends: [               // mirrors SVG_CONFIG.backends with runtime state
       { id: 0, status: 'healthy', requestCount: 0 },
@@ -369,6 +371,8 @@
   function getSVG() {
     return document.getElementById(SVG_CONFIG.svgId);
   }
+
+  const FAILURE_BUTTON_IDS = ['btn-failure-0', 'btn-failure-1', 'btn-failure-2'];
 
   /** Get or create a named layer group inside the SVG. */
   function getLayer(svg, id) {
@@ -510,7 +514,6 @@
       rx: pool.rx,
       fill: pool.fill, stroke: pool.stroke,
       'stroke-width': 1.5, 'stroke-dasharray': '8 5',
-      opacity: 1,
     }));
 
     // Pool label text
@@ -544,14 +547,14 @@
     const { backends, colors, backendHealthy } = SVG_CONFIG;
 
     backends.forEach(cfg => {
-      const stateEntry = STATE.backends.find(b => b.id === cfg.id);
+      const stateEntry = STATE.backends[cfg.id];
       const isHealthy = stateEntry.status === 'healthy';
       const fillColor = isHealthy ? backendHealthy.fill : colors.failedNode;
       const strokeColor = isHealthy ? backendHealthy.stroke : colors.failedStroke;
       const dotColor = isHealthy ? colors.healthy : colors.failed;
 
       // Node rect
-      const rect = svgAppend(layer, svgEl('rect', {
+      svgAppend(layer, svgEl('rect', {
         id: `backend-rect-${cfg.id}`,
         x: cfg.x, y: cfg.y, width: cfg.w, height: cfg.h,
         rx: cfg.rx,
@@ -593,7 +596,7 @@
       sub.textContent = cfg.subLabel;
 
       // Status dot (top-right corner)
-      const statusDot = svgAppend(layer, svgEl('circle', {
+      svgAppend(layer, svgEl('circle', {
         id: `backend-status-${cfg.id}`,
         cx: cfg.statusDotX, cy: cfg.statusDotY, r: 6,
         fill: dotColor, stroke: '#fff', 'stroke-width': 1.5,
@@ -618,50 +621,21 @@
    * Paths are drawn in the 'lines' layer so packets appear on top.
    */
   function drawConnections(layer) {
-    const { paths, colors } = SVG_CONFIG;
+    const { paths, colors, backendPathIds } = SVG_CONFIG;
 
-    const pathDefs = [
-      // Client → Gateway
-      {
-        id: 'path-client-gateway',
-        d: paths.clientToGateway,
-        stateKey: null,  // always active
-      },
-      // Gateway → Backend 0
-      {
-        id: 'path-gateway-b0',
-        d: paths.gatewayToB0,
-        stateKey: 0,
-      },
-      // Gateway → Backend 1
-      {
-        id: 'path-gateway-b1',
-        d: paths.gatewayToB1,
-        stateKey: 1,
-      },
-      // Gateway → Backend 2
-      {
-        id: 'path-gateway-b2',
-        d: paths.gatewayToB2,
-        stateKey: 2,
-      },
-      // Gateway → Backend 3
-      {
-        id: 'path-gateway-b3',
-        d: paths.gatewayToB3,
-        stateKey: 3,
-      },
-    ];
+    // Client → Gateway (always active)
+    svgAppend(layer, svgEl('path', {
+      id: 'path-client-gateway', d: paths.clientToGateway,
+      fill: 'none', stroke: colors.lineActive, 'stroke-width': 2,
+      'marker-end': 'url(#arrow)',
+    }));
 
-    pathDefs.forEach(({ id, d, stateKey }) => {
-      const isActive = stateKey === null
-        ? true
-        : STATE.backends[stateKey].status === 'healthy';
-
+    // Gateway → each backend
+    const gatewayPathData = [paths.gatewayToB0, paths.gatewayToB1, paths.gatewayToB2, paths.gatewayToB3];
+    gatewayPathData.forEach((d, id) => {
+      const isActive = STATE.backends[id].status === 'healthy';
       svgAppend(layer, svgEl('path', {
-        id,
-        d,
-        fill: 'none',
+        id: backendPathIds[id], d, fill: 'none',
         stroke: isActive ? colors.lineActive : colors.lineInactive,
         'stroke-width': isActive ? 2 : 1.5,
         'stroke-dasharray': isActive ? 'none' : '6 4',
@@ -731,14 +705,16 @@
     const defs = svg.querySelector('defs');
 
     // Create a reusable dot-grid pattern (1 element instead of ~312)
-    const pattern = svgEl('pattern', {
-      id: 'dot-grid', width: 40, height: 40,
-      patternUnits: 'userSpaceOnUse',
-    });
-    svgAppend(pattern, svgEl('circle', {
-      cx: 20, cy: 20, r: 1, fill: '#c8e0f4', opacity: 0.5,
-    }));
-    svgAppend(defs, pattern);
+    if (!svg.getElementById('dot-grid')) {
+      const pattern = svgEl('pattern', {
+        id: 'dot-grid', width: 40, height: 40,
+        patternUnits: 'userSpaceOnUse',
+      });
+      svgAppend(pattern, svgEl('circle', {
+        cx: 20, cy: 20, r: 1, fill: '#c8e0f4', opacity: 0.5,
+      }));
+      svgAppend(defs, pattern);
+    }
 
     // Single rect fills the entire diagram area with the pattern
     svgAppend(layer, svgEl('rect', {
@@ -796,6 +772,7 @@
 
       if (t < 1) {
         rafHandle = requestAnimationFrame(step);
+        animEntry.rafHandle = rafHandle;
       } else {
         // Animation complete — remove dot and tracking entry
         dot.remove();
@@ -903,7 +880,7 @@
       if (!backendPathEl) return;
       animatePacket(backendPathEl, phase2Color, phase2Duration, () => {
         targetBackend.requestCount++;
-        const backendCfg = SVG_CONFIG.backends.find(b => b.id === targetBackend.id);
+        const backendCfg = SVG_CONFIG.backends[targetBackend.id];
         if (isFailover) {
           showFloatingLabel('↻ Failover', SVG_CONFIG.gateway.cx + 80, SVG_CONFIG.gateway.cy - 10, SVG_CONFIG.colors.failover);
         } else {
@@ -1047,6 +1024,15 @@
     }
   }
 
+  /** Enable or disable the explicit failure buttons based on flow and backend state. */
+  function syncFailureButtons() {
+    FAILURE_BUTTON_IDS.forEach((buttonId, index) => {
+      const button = document.getElementById(buttonId);
+      if (!button) return;
+      button.disabled = !STATE.isRunning || STATE.backends[index].status === 'failed';
+    });
+  }
+
   /* ════════════════════════════════════════════════════════════
      SECTION 8 – FLOW CONTROL
      Start / Stop / Failure / Reset entry points.
@@ -1072,7 +1058,7 @@
     // Update button visibility
     document.getElementById('btn-start').style.display = 'none';
     document.getElementById('btn-stop').style.display  = '';
-    document.getElementById('btn-failure').disabled    = false;
+    syncFailureButtons();
   }
 
   /** Stop the request flow simulation. */
@@ -1085,17 +1071,16 @@
 
     document.getElementById('btn-start').style.display = '';
     document.getElementById('btn-stop').style.display  = 'none';
+    syncFailureButtons();
   }
 
   /**
-   * Simulate a backend failure.
-   * Marks the next healthy backend as "failed" and updates visuals.
-   * Disables the button when all backends have failed.
+   * Simulate a specific backend failure.
+   * Marks the selected backend as failed once and updates visuals.
    */
-  function triggerFailure() {
-    // Find the first healthy backend to fail (in order: 0, 1, 2)
-    const target = STATE.backends.find(b => b.status === 'healthy');
-    if (!target) return;
+  function triggerFailure(backendId) {
+    const target = STATE.backends[backendId];
+    if (!target || target.status === 'failed') return;
 
     // Mark as failed
     target.status = 'failed';
@@ -1105,13 +1090,14 @@
     updateBackendVisual(target.id, 'failed');
 
     // Show "Failure!" label near the backend
-    const backendCfg = SVG_CONFIG.backends.find(b => b.id === target.id);
+    const backendCfg = SVG_CONFIG.backends[target.id];
     showFloatingLabel('⚡ Failed!', backendCfg.cx, backendCfg.cy - 35, SVG_CONFIG.colors.failed);
+
+    syncFailureButtons();
 
     // Check if all backends are now failed
     const allFailed = STATE.backends.every(b => b.status === 'failed');
     if (allFailed) {
-      document.getElementById('btn-failure').disabled = true;
       // Stop the flow since there's nothing to route to
       if (STATE.isRunning) {
         stopFlow();
@@ -1161,8 +1147,7 @@
     // Reset buttons
     document.getElementById('btn-start').style.display   = '';
     document.getElementById('btn-stop').style.display    = 'none';
-    document.getElementById('btn-failure').disabled      = true;
-    document.getElementById('btn-reset').disabled        = false;
+    syncFailureButtons();
   }
 
   /* ════════════════════════════════════════════════════════════
@@ -1171,7 +1156,9 @@
 
   document.getElementById('btn-start').addEventListener('click',   startFlow);
   document.getElementById('btn-stop').addEventListener('click',    stopFlow);
-  document.getElementById('btn-failure').addEventListener('click', triggerFailure);
+  document.getElementById('btn-failure-0').addEventListener('click', () => triggerFailure(0));
+  document.getElementById('btn-failure-1').addEventListener('click', () => triggerFailure(1));
+  document.getElementById('btn-failure-2').addEventListener('click', () => triggerFailure(2));
   document.getElementById('btn-reset').addEventListener('click',   resetAll);
 
   /* ════════════════════════════════════════════════════════════

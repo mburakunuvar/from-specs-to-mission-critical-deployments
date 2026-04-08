@@ -52,78 +52,44 @@ $ code runbook.ipynb
 3. **Run the Step 2 verification cell** to confirm the kernel is active, then continue from Step 3.
 
 
-## Recommended Architecture
+## Architecture
+
+> ⚠️ **Before deploying**, review the [audit findings in biceps-explained.md](biceps-explained.md#audit-findings) for critical and high-priority fixes.
+
+The recommended architecture uses a priority-weighted backend pool. In this demo, all four endpoints use **PayGo GlobalStandard** deployments of `gpt-4o-mini`.
 
 ```
 Caller (Python SDK / HTTP client)
-	Caller (Python SDK / HTTP client)
-		│
-		▼
-	  Azure API Management (Basicv2 tier)
-	  ┌──────────────────────────────────────────────────────────┐
-	  │  Inference API  /inference/openai/...                    │
-	  │  Policy:                                                 │
-	  │    • set-backend-service → backend pool                  │
-	  │    • retry on 429 / 503 (count=2, tries all backends)    │
-	  └───────┬──────────────────────────────────────────────────┘
-		  │
-		  ▼
-	   ┌─────────────────────────────────────────────┐
-	   │  Backend Pool (priority + weighted routing) │
-	   │                                             │
-	   │  ┌─────────────────────────────────────┐   │
-	   │  │ Priority 1                          │   │  ← served first
-	   │  │ PTU DZ - swedencentral              │   │
-	   │  └─────────────────────────────────────┘   │
-	   │                                             │
-	   │  ┌──────────────────┐ ┌──────────────────┐ │
-	   │  │ Priority 2 w=50  │ │ Priority 2 w=50  │ │  ← 50/50 on P1 failover
-	   │  │ PayGo DZ         │ │ PayGo DZ         │ │
-	   │  │ swedencentral    │ │ germanywestcent  │ │
-	   │  └──────────────────┘ └──────────────────┘ │
-	   │                                             │
-	   │  ┌─────────────────────────────────────┐   │
-	   │  │ Priority 3                          │   │  ← last resort
-	   │  │ PayGo Global Germany West           │   │
-	   │  └─────────────────────────────────────┘   │
-	   └─────────────────────────────────────────────┘
-```
-
-## Demo Architecture
-
-```
-Caller (Python SDK / HTTP client)
-	Caller (Python SDK / HTTP client)
-		│
-		▼
-	  Azure API Management (Basicv2 tier)
-	  ┌──────────────────────────────────────────────────────────┐
-	  │  Inference API  /inference/openai/...                    │
-	  │  Policy:                                                 │
-	  │    • set-backend-service → backend pool                  │
-	  │    • retry on 429 / 503 (count=2, tries all backends)    │
-	  └───────┬──────────────────────────────────────────────────┘
-		  │
-		  ▼
-	   ┌─────────────────────────────────────────────┐
-	   │  Backend Pool (priority + weighted routing) │
-	   │                                             │
-	   │  ┌─────────────────────────────────────┐   │
-	   │  │ Priority 1                          │   │  ← served first
-	   │  │ PTU DZ - swedencentral              │   │
-	   │  └─────────────────────────────────────┘   │
-	   │                                             │
-	   │  ┌──────────────────┐ ┌──────────────────┐ │
-	   │  │ Priority 2 w=50  │ │ Priority 2 w=50  │ │  ← 50/50 on P1 failover
-	   │  │ PayGo DZ         │ │ PayGo DZ         │ │
-	   │  │ swedencentral    │ │ germanywestcent  │ │
-	   │  └──────────────────┘ └──────────────────┘ │
-	   │                                             │
-	   │  ┌─────────────────────────────────────┐   │
-	   │  │ Priority 3                          │   │  ← last resort
-	   │  │ PayGo Global Germany West           │   │
-	   │  └─────────────────────────────────────┘   │
-	   └─────────────────────────────────────────────┘
+	│
+	▼
+  Azure API Management (Basicv2 tier)
+  ┌──────────────────────────────────────────────────────────┐
+  │  Inference API  /inference/openai/...                    │
+  │  Policy:                                                 │
+  │    • set-backend-service → backend pool                  │
+  │    • retry on 429 / 503 (count=3, tries all backends)    │
+  └───────┬──────────────────────────────────────────────────┘
+	  │
+	  ▼
+   ┌─────────────────────────────────────────────┐
+   │  Backend Pool (priority + weighted routing) │
+   │                                             │
+   │  ┌─────────────────────────────────────┐   │
+   │  │ Priority 1                          │   │  ← served first
+   │  │ PTU DZ - swedencentral              │   │
+   │  └─────────────────────────────────────┘   │
+   │                                             │
+   │  ┌──────────────────┐ ┌──────────────────┐ │
+   │  │ Priority 2 w=50  │ │ Priority 2 w=50  │ │  ← 50/50 on P1 failover
+   │  │ PayGo DZ         │ │ PayGo DZ         │ │
+   │  │ swedencentral    │ │ germanywestcent  │ │
+   │  └──────────────────┘ └──────────────────┘ │
+   │                                             │
+   │  ┌─────────────────────────────────────┐   │
+   │  │ Priority 3                          │   │  ← last resort
+   │  │ PayGo Global Germany West           │   │
+   │  └─────────────────────────────────────┘   │
+   └─────────────────────────────────────────────┘
 ```
 
 

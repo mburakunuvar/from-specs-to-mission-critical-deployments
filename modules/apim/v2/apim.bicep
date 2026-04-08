@@ -2,7 +2,7 @@
  * @module apim-v2
  * @description This module defines the Azure API Management (APIM) resources using Bicep.
  * It includes configurations for creating and managing APIM instance.
- * This is version 1 (v1) of the APIM Bicep module.
+ * This is version 2 (v2) of the APIM Bicep module.
  */
 
 // ------------------
@@ -84,7 +84,7 @@ resource apimService 'Microsoft.ApiManagement/service@2024-06-01-preview' = {
   location: location
   sku: {
     name: apimSku
-    capacity: 1
+    capacity: apimSku == 'Consumption' ? 0 : 1
   }
   properties: {
     publisherEmail: publisherEmail
@@ -145,13 +145,12 @@ resource apimAppInsightsLogger 'Microsoft.ApiManagement/service/loggers@2024-06-
   }
 }
 
-@batchSize(1)
-resource apimSubscription 'Microsoft.ApiManagement/service/subscriptions@2024-06-01-preview' = [for subscription in apimSubscriptionsConfig: if(length(apimSubscriptionsConfig) > 0) {
+resource apimSubscription 'Microsoft.ApiManagement/service/subscriptions@2024-06-01-preview' = [for subscription in apimSubscriptionsConfig: {
   name: subscription.name
   parent: apimService
   properties: {
     allowTracing: true
-    displayName: '${subscription.displayName}'
+    displayName: subscription.displayName
     scope: '/apis'
     state: 'active'
   }

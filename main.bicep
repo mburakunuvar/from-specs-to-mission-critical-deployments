@@ -2,13 +2,29 @@
 //    PARAMETERS
 // ------------------
 
-param aiServicesConfig array = []
-param modelsConfig array = []
+@minLength(1)
+@description('Configuration array for AI Services endpoints. At least one is required.')
+param aiServicesConfig array
+
+@description('Configuration array for model deployments across AI Services accounts.')
+param modelsConfig array
+
+@description('The SKU tier for the API Management instance (e.g., Basicv2, Consumption).')
 param apimSku string
+
+@description('Configuration array for APIM subscriptions to create.')
 param apimSubscriptionsConfig array = []
+
+@description('The inference API type — determines the OpenAPI spec and URL path structure.')
 param inferenceAPIType string = 'AzureOpenAI'
-param inferenceAPIPath string = 'inference' // Path to the inference API in the APIM service
+
+@description('The base path for the inference API in APIM.')
+param inferenceAPIPath string = 'inference'
+
+@description('The AI Foundry project name prefix scoped to each Cognitive Services account.')
 param foundryProjectName string = 'default'
+
+@description('Whether to provision Log Analytics and Application Insights diagnostics.')
 param enableDiagnostics bool = true
 
 // ------------------
@@ -69,6 +85,7 @@ module inferenceAPIModule './modules/apim/v2/inference-api.bicep' = {
 output apimServiceId string = apimModule.outputs.id
 output apimResourceGatewayURL string = apimModule.outputs.gatewayUrl
 
+#disable-next-line outputs-should-not-contain-secrets
 output apimSubscriptions array = apimModule.outputs.apimSubscriptions
 output aiServicesRuntimeConfig array = foundryModule.outputs.extendedAIServicesConfig
 output appInsightsResourceId string = diagnosticsModule.outputs.appInsightsId

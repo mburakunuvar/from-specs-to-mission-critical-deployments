@@ -1,7 +1,7 @@
 /**
- * @module openai-v2
+ * @module openai-v3
  * @description This module defines the Azure Cognitive Services OpenAI resources using Bicep.
- * This is version 2 (v2) of the OpenAI Bicep module.
+ * This is version 3 (v3) of the OpenAI Bicep module.
  */
 
 // ------------------
@@ -19,10 +19,10 @@ param modelsConfig array = []
 param lawId string = ''
 
 @description('APIM Principal Id')
-param  apimPrincipalId string
+param apimPrincipalId string
 
 @description('AI Foundry project name')
-param  foundryProjectName string = 'default'
+param foundryProjectName string = 'default'
 
 @description('The instrumentation key for Application Insights')
 @secure()
@@ -79,7 +79,7 @@ resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-pre
 }]
 
 
-var aiProjectManagerRoleDefinitionID = 'eadc314b-1a2d-4efa-be10-5d325db5065e' 
+var aiProjectManagerRoleDefinitionID = azureRoles.AIProjectManager
 resource aiProjectManagerRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (config, i) in aiServicesConfig: {
     scope: cognitiveServices[i]
     name: guid(subscription().id, resourceGroup().id, config.name, aiProjectManagerRoleDefinitionID)
@@ -158,7 +158,6 @@ output extendedAIServicesConfig array = [for (config, i) in aiServicesConfig: {
   priority: config.?priority
   weight: config.?weight
   // Additional properties
-  cognitiveService: cognitiveServices[i]
   cognitiveServiceName: cognitiveServices[i].name
   cognitiveServicesId: cognitiveServices[i].id
   endpoint: cognitiveServices[i].properties.endpoint

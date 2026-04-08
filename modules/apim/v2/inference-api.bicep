@@ -66,7 +66,7 @@ var logSettings = {
   body: { bytes: 8192 }
 }
 
-var updatedPolicyXml = replace(policyXml, '{backend-id}', (length(aiServicesConfig) > 1) ? inferenceBackendPoolName : aiServicesConfig[0].name)
+var updatedPolicyXml = replace(policyXml, '{backend-id}', (length(aiServicesConfig) > 1) ? inferenceBackendPoolName : (length(aiServicesConfig) > 0 ? aiServicesConfig[0].name : 'no-backend'))
 
 // ------------------
 //    RESOURCES
@@ -112,13 +112,13 @@ resource apiPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-06-01-pre
 
 
 // https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/backends
-resource inferenceBackend 'Microsoft.ApiManagement/service/backends@2024-06-01-preview' =  [for (config, i) in aiServicesConfig: if(length(aiServicesConfig) > 0) {
+resource inferenceBackend 'Microsoft.ApiManagement/service/backends@2024-06-01-preview' =  [for (config, i) in aiServicesConfig: {
   name: config.name
   parent: apimService
   properties: {
     description: 'Inference backend'
     url: '${config.endpoint}${endpointPath}'
-    protocol: 'http'
+    protocol: 'https'
     circuitBreaker: (configureCircuitBreaker) ? {
       rules: [
       {
@@ -132,6 +132,10 @@ resource inferenceBackend 'Microsoft.ApiManagement/service/backends@2024-06-01-p
           {
           min: 429
           max: 429
+          }
+          {
+          min: 500
+          max: 599
           }
         ]
         }
