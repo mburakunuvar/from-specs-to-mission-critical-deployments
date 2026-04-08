@@ -54,6 +54,7 @@ param apimSubscriptionsConfig array = []
 param lawId string = ''
 
 @description('The instrumentation key for Application Insights')
+@secure()
 param appInsightsInstrumentationKey string = ''
 
 @description('The resource ID for Application Insights')
@@ -130,7 +131,7 @@ resource apimLogger 'Microsoft.ApiManagement/service/loggers@2024-06-01-preview'
 }
 
 // Create a logger only if we have an App Insights ID and instrumentation key.
-resource apimAppInsightsLogger 'Microsoft.ApiManagement/service/loggers@2021-12-01-preview' = if (!empty(appInsightsId) && !empty(appInsightsInstrumentationKey)) {
+resource apimAppInsightsLogger 'Microsoft.ApiManagement/service/loggers@2024-06-01-preview' = if (!empty(appInsightsId) && !empty(appInsightsInstrumentationKey)) {
   name: 'appinsights-logger'
   parent: apimService
   properties: {

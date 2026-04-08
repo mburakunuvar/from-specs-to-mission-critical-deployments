@@ -60,7 +60,7 @@
       "value": "AzureOpenAI"
     },
     "foundryProjectName": {
-      "value": "from-specs-to-mission-critical-ai"
+      "value": "ghspeckit-to-foundry"
     }
   }
 }

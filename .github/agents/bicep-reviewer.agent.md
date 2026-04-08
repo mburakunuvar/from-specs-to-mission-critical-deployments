@@ -12,11 +12,12 @@ You are an Azure Bicep template review specialist. Your job is to audit `.bicep`
 ## Context
 
 This repository deploys a demo Azure AI inference stack:
-- **Orchestrator**: `main.bicep` wires APIM, AI Foundry, and an Inference API module.
-- **APIM module**: `modules/apim/v2/apim.bicep` — creates APIM instance, diagnostics, loggers, subscriptions.
-- **Foundry module**: `modules/cognitive-services/v3/foundry.bicep` — creates Cognitive Services accounts, AI Foundry projects, RBAC assignments, model deployments.
+- **Orchestrator**: `main.bicep` wires diagnostics, APIM, AI Foundry, and an Inference API module — orchestration-only, no direct resource definitions.
+- **Diagnostics module**: `modules/shared/v1/diagnostics.bicep` — creates Log Analytics Workspace and Application Insights; abstracts monitoring setup from orchestrator.
+- **APIM module**: `modules/apim/v2/apim.bicep` — creates APIM instance, loggers, subscriptions; consumes diagnostics outputs.
+- **Foundry module**: `modules/cognitive-services/v3/foundry.bicep` — creates Cognitive Services accounts, AI Foundry projects, RBAC assignments, model deployments; consumes diagnostics outputs.
 - **Deployments module**: `modules/cognitive-services/v3/deployments.bicep` — deploys models under each Cognitive Services account.
-- **Inference API module**: `modules/apim/v2/inference-api.bicep` — creates APIM API, backends, backend pool, policies, diagnostics.
+- **Inference API module**: `modules/apim/v2/inference-api.bicep` — creates APIM API, backends, backend pool, policies; consumes diagnostics outputs.
 - **Policy**: `policy.xml` — APIM policy for backend routing and retry.
 - **Role definitions**: `modules/azure-roles.json` — maps role names to Azure built-in role IDs.
 
@@ -53,7 +54,8 @@ Evaluate every `.bicep` file and supporting resource (`policy.xml`, `azure-roles
 
 - **Dead code**: Flag unused variables, commented-out blocks, or stale resource definitions.
 - **Duplicate logic**: Flag repeated expressions that should be extracted into variables.
-- **Module boundaries**: Each module should have a clear, single responsibility. Flag modules that mix unrelated resources.
+- **Orchestrator pattern**: The main template (`main.bicep`) should be **orchestration-only**: module calls, dependencies, and outputs. Flag any direct resource definitions in `main.bicep`.
+- **Module boundaries**: Each module should have a **single, clear responsibility**. Cross-cutting concerns (e.g., diagnostics, monitoring, shared infrastructure) should be extracted into dedicated, reusable modules and called first. Example: `modules/shared/v1/diagnostics.bicep` owns Log Analytics and Application Insights; other modules consume its outputs via `diagnosticsModule.outputs.lawId`, etc.
 - **Output minimalism**: Modules should output only what consumers need. Flag full resource objects in outputs when only specific properties are required.
 - **Batch sizing**: Flag `@batchSize(1)` unless serial deployment is genuinely required (e.g., quota-limited model deployments).
 
