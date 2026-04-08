@@ -35,26 +35,23 @@ Spec-Kit is not a scaffolding or template distribution tool. It does not package
 | **Template distribution** (clone and customize) | GitHub Template Repo, `azd init`, or Cookiecutter |
 | **Deployment orchestration** (run it) | Azure Developer CLI (`azd`), or the runbook in this repo |
 
-## Notebook Setup
 
-Use `runbook.ipynb` for the end-to-end lab flow.
+## Purpose of this demo 
 
-Open it in VS Code:
+This demo showcases how to use **Spec-Kit** to build a mission-critical deployment of Microsoft Foundry models. We deploy **4 different SKU variants** across **2 geographically distinct regions** and position them behind **Azure AI Gateway** to maximize availability and resilience.
 
-```bash
-$ code runbook.ipynb
-```
+The resulting architecture demonstrates:
+- **High availability** through multi-region deployment with fallback paths
+- **Cost optimization** by combining provisioned (PTU) and pay-as-you-go (PayGo) SKUs
+- **Reproducibility** via Spec-Kit specs and plans that guide infrastructure-as-code generation
+- **Resilience** through priority-weighted backend routing with automatic retry policies
 
-### Quick start (3 steps)
+By following the Spec-Kit workflow, teams can replicate this production-grade setup consistently.
 
-1. **Run the Step 1 cell** using the default **Python 3** kernel (VS Code will prompt you to choose a kernel the first time — pick **Python 3**). This creates `.venv` and installs dependencies.
-2. **Switch to the `.venv` kernel:** click the kernel picker (top-right of the notebook) and select **`.venv (Python 3.12.x)`**.
-3. **Run the Step 2 verification cell** to confirm the kernel is active, then continue from Step 3.
-
+![Design](images/demo-image-aigw.png)
 
 ## Architecture
 
-> ⚠️ **Before deploying**, review the [audit findings in biceps-explained.md](biceps-explained.md#audit-findings) for critical and high-priority fixes.
 
 The recommended architecture uses a priority-weighted backend pool. In this demo, all four endpoints use **PayGo GlobalStandard** deployments of `gpt-4o-mini`.
 
@@ -125,50 +122,21 @@ For more details, see the [Azure AI Foundry deployment types](https://learn.micr
 
 In this demo, all four foundry accounts (`foundry1`–`foundry4`) deploy `gpt-4o-mini` using **`GlobalStandard`** with **8K TPM** capacity each. Combined effective capacity across all four backends = up to **32K TPM** before any 429 Errors surface to the caller — APIM exhausts all backends before returning an error.
 
+## Notebook Setup
 
+Use `runbook.ipynb` for the end-to-end lab flow.
 
-## Test Step Reference
+Open it in VS Code:
 
-The runbook tests traffic routing across four AI Foundry backends behind an APIM gateway. Here's how each step builds on the previous:
+```bash
+$ code runbook.ipynb
+```
 
-**Phase 1: Baseline (5 requests)**
-- **Step 7:** Run 5 test requests; capture response headers (`x-ms-region`, optional endpoint hints) and APIM trace IDs
-- **Step 8a:** Quick visualization of what the client sees (best-effort: endpoint names if available, else regions)
-- **Step 8b:** Query APIM traces via `listTrace` API to get **exact authoritative backend attribution**  
-- **Step 8c:** Pretty chart of Step 8b data — use this for live demos
+### Quick start (3 steps)
 
-**Phase 2: Extended (20 requests; triggers failover)**
-- **Step 9:** Run 20 test requests; same capture as Step 7 to observe failover behavior
-- **Step 9a:** Quick visualization (best-effort, may show regions only if APIM doesn't expose exact target)
-- **Step 9b:** Query APIM traces for exact backend attribution across all 20 requests  
-- **Step 9c:** Pretty chart of Step 9b data — authoritative proof of which backends handled traffic
-
-**Phase 3: Deterministic failover (5 requests; forces Endpoint 4)**
-- **Step 10:** Overview, prerequisites, and safety notes — temporary override scope explained
-- **Step 10a:** Snapshot the current APIM backend pool + apply Endpoint-4-only override
-- **Step 10b:** Run 5 targeted requests while override is active; capture trace IDs
-- **Step 10c:** Query APIM traces — confirms all 5 requests routed exclusively to Endpoint 4
-- **Step 10d:** Restore original backend pool — APIM returns to full priority-based routing
-
-**When to use which:**
-- **For testing/iteration:** Runs Steps 8a + 9a (fast, no backend queries needed)
-- **For live demo:** Run the full chain (8b + 8c for baseline proof; 9b + 9c for extended failover proof; 10a–10d for deterministic Endpoint 4 failover proof)
-
-| Step | Purpose | Data source | Accuracy |
-|------|---------|-------------|----------|
-| **7** | Baseline traffic test | Response headers + APIM trace IDs | Client-visible signals |
-| **8a** | Baseline visualization (quick) | Headers + trace IDs | Best-available (endpoint names if hints present, else regions) |
-| **8b** | Baseline diagnostics | APIM traces via `listTrace` API | **Exact backend hostnames** |
-| **8c** | Baseline visualization (authoritative) | Step 8b results | **Exact match** to 8b data |
-| **9** | Extended traffic test (20 req) | Response headers + APIM trace IDs | Client-visible signals |
-| **9a** | Extended visualization (quick) | Headers + trace IDs | Best-available |
-| **9b** | Extended diagnostics | APIM traces via `listTrace` API | **Exact backend hostnames** |
-| **9c** | Extended visualization (authoritative) | Step 9b results | **Exact match** to 9b data |
-| **10** | Failover test overview + safety notes | — | — |
-| **10a** | Snapshot pool + apply Endpoint-4-only override | APIM management API | **Exact APIM backend pool state** |
-| **10b** | Deterministic failover traffic (5 req) | Response headers + APIM trace IDs | Client-visible signals |
-| **10c** | Failover attribution (authoritative) | APIM traces via `listTrace` API | **Exact backend hostnames** |
-| **10d** | Restore original backend pool | APIM management API | **Exact APIM backend pool state** |
+1. **Run the Step 1 cell** using the default **Python 3** kernel (VS Code will prompt you to choose a kernel the first time — pick **Python 3**). This creates `.venv` and installs dependencies.
+2. **Switch to the `.venv` kernel:** click the kernel picker (top-right of the notebook) and select **`.venv (Python 3.12.x)`**.
+3. **Run the Step 2 verification cell** to confirm the kernel is active, then continue from Step 3.
 
 ## Kernel Troubleshooting
 
@@ -176,20 +144,3 @@ If `.venv (Python 3.12.x)` doesn't appear in the kernel picker:
 
 1. Reload VS Code: `Ctrl+Shift+P` → **Developer: Reload Window**
 2. Check the kernel picker again — look under *Python Environments*.
-
-## Provisioned Resources
-
-All resource names generated by this deployment are within Azure limits:
-
-| Resource | Pattern | Status | Use case |
-|---|---|---|---|
-| Resource Group | `rg-gh-spec-kit-to-foundry-mission-critical` | ✅ | Container for all deployment resources |
-| ARM Deployment | `gh-spec-kit-to-foundry-mission-critical` | ✅ | Tracks the Bicep deployment lifecycle in ARM |
-| APIM instance | `apim-<13-char hash>` | ✅ | AI Gateway — routes and load balances inference traffic |
-| Cognitive Services | `Endpoint4-PayGo-Global-Germany-<13-char hash>` | ✅ | AI Foundry account hosting model deployments |
-| Custom subdomain | same as above, lowercased | ✅ | Unique HTTPS endpoint URL for each AI Foundry account |
-| AI Project | `ghspeckit-to-foundry-Endpoint4-PayGo-Global-Germany` | ✅ | AI Foundry project scoped to each account |
-| Log Analytics | `law-<13-char hash>` | ✅ | Stores diagnostic logs and metrics |
-| App Insights | `appi-<13-char hash>` | ✅ | Traces exact backend calls per request |
-
-> The `<13-char hash>` is a deterministic `uniqueString()` derived from the subscription and resource group IDs — it is fixed per deployment and does not vary with `deployment_name`.
