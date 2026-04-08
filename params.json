@@ -50,6 +50,9 @@
         }
       ]
     },
+    "enableDiagnostics": {
+      "value": true
+    },
     "inferenceAPIPath": {
       "value": "inference"
     },
