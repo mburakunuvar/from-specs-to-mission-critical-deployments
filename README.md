@@ -144,3 +144,18 @@ If `.venv (Python 3.12.x)` doesn't appear in the kernel picker:
 
 1. Reload VS Code: `Ctrl+Shift+P` → **Developer: Reload Window**
 2. Check the kernel picker again — look under *Python Environments*.
+
+## Notebook Tests
+
+`runbook.ipynb` validates routing behavior in three phases:
+
+- **Baseline test (5 requests):** confirms normal steady-state routing and captures latency and trace metadata.
+![Baseline test](images/test1.png)
+
+- **Extended test (20 requests):** checks how traffic distributes under higher sustained demand.
+![Extended test](images/test2.png)
+
+- **Deterministic failover test:** temporarily forces APIM to route only to the last-resort backend, verifies exact backend attribution from APIM traces, then restores the original pool.
+![Deterministic failover test](images/test3.png)
+
+In short, the notebook proves normal routing, scale behavior, and controlled failover/restore end to end.
